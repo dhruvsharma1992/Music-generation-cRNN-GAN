@@ -1,0 +1,85 @@
+tensorflow:
+tf:split(value, num_or_size_split, axis)在某个轴上split
+tf.squeeze(value, [x,x,x])去掉维度为1的维或去掉维x
+tf.RunOptions能够选择很多训练时的选项
+tf.no_op 表示某个操作
+tf.train.get_checkpoint_state 和tf.train.Saver用于保存参数以及恢复参数
+tf.RunMetadata() 存储运行步以及cost_graph，需要在RunOptions中选择Trace
+通过session.run()中第一个参数决定返回什么值
+
+
+variables的使用：
+tf.get_variable(name, shape, initializer)：通过给的名字创建或者返回一个变量
+tf.variable_scope(scope_name)：通过tf.get_variable()为变量名指定命名空间
+使用scope.reuse_variables()用于表示该命名空间内的变量共享
+tf.concat(axis, [values])在某个轴上合并矩阵
+
+tf.clip_by_value
+
+
+midi文件的格式：
+midi头部：
+指定是单音轨还是多音轨
+指定轨道数（实际音轨数目加上全局的音轨）
+指定基本时间（一般为120，即一个四分音符的tick数，tick是最小的时间单位）
+
+数据：
+每一个数据有着相同的结构：时间差+事件，时间差指前一个事件到该事件的时间数，单位为tick。事件可以分为音符、控制器和系统信息，都是种类+参数来表示。音符的范围为0-127（00-7F），音符最重要的参数为力度（也成为速度velocity），3C 64表示力度为100的中央C音符。
+
+linear函数：
+linear(input, output_dim, scope, stddec, reuse=False)
+就是一个全链接层，返回input*W + b，纬度为想要的纬度
+
+RNNGAN(is_training=True, num_song_features=num_song_features, num_meta_features=num_meta_features)
+网络结构：
+
+Generator:
+regularizer: L2
+lstm: 
+forget_bias = 1.0
+Dropout = 0.5
+RNNCell有两层lstm_cell，每层LSTM的hidden_size_g为350
+LSTM最初的state是通过RNNCell初始化的batch_size的零状态
+然后是产生部分：
+生成层随即输入random_rnninputs，为100个(20,4)的矩阵，100为songlength
+该数组的意义为batch_size, song_features，(即为作曲家)也就是这个时间点的音符特征，然后每个数组转为(20,350)的矩阵
+这些数组经过relu单元后成为RNNCell的输入
+RNNCell的输出为(20,350)的矩阵，经过变换为(20,4)的矩阵后作为generated_point，然后作为负反馈添加到输入中（使用concat将输入与generated_point在axis=1上合并）
+pretraining:
+首先pretraining有选项可以选择是否将前一步的结果作为输入（理想的结果即为InputData，因此这里应该是将前一步的InputData加入输入，也可以选择将input_metaData加入输入进行训练。
+预训练G时将input_data作为结果，先获取一个训练过的Input模型
+
+
+
+Discriminator:
+discriminator单元：
+单元有FLAGS.hidden_size_d个的lSTM，单元有FLAGS.hidden_size_g个的LSTM各有FLAGS.num_layers_d个，分别组成的两个MultiRNNCell的单元。
+然后两个单元组成了双向RNN，这里的双向RNN为stack_bidirectional_rnn
+双向RNN的输出（100个(20,700)的矩阵），将每个(20,700)的矩阵转为(20,1)的矩阵，即成了一个(100,20,1)的矩阵
+
+整个的D首先将songdata_inputs作为输入，然后使用Generator产生的generated_point作为输入，比较这两者的loss。
+
+run_epoch：
+传入网络、loader、datasetlabel则是（training/validation/test）数据集
+通过loader获取数据[batch_meta, batch_song]，然后在网络中训练获取model.rnn_pretraining_loss, model.d_loss（可以使用pretraining参数控制是否是pretraining）
+这个就是进行pretraining和training的函数
+
+sample：
+就是得到generated_features
+
+main：
+可以从之前的运行结果中度曲参数，saver.restore恢复参数
+global_step产生的方法还是有点迷……这个如果太小会影响迭代次数并且在training时会改变song_length（如果）
+【这边有个技巧，就是在改变Flag.songLength后又在model空间下调用了RNNGAN重新生成了网络】
+然后使用run_epoch运行pretraining_epochs次epoch的pretraining
+每次epoch会运行一次validation，在运行到epochs_per_checkpoint整数倍的epoch时存储参数
+运行超时后会存储参数后退出
+
+
+可选的优化算法：
+
+
+
+
+
+

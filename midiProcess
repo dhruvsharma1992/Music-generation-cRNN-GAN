@@ -1,0 +1,29 @@
+对midi文件的处理：
+使用midi库读取midi文件
+读取resolution
+然后对于midi_pattern中的每一个track，读取event，如果是按下某个键，记录当前event的真实tick、音调、velocity（应该理解为力度吧？），放在not_closed_notes中，当按键被松开时将这个音记录下来，然后会将所有的音都记录下来，按照开始时间排序，每个音包含四个属性：频率、velocity、开始的tick、长度。
+
+
+在get_batch时获取了num_meta_features，竟然是'classic'和'composer'的数量，醉了
+num_song_features是NUM_FEATURES_PER_TONE*self.tones_per_cell+1，就是tone的特点加tones
+然后对于每首曲子，从随机一个地方开始，取这个点开始的songlength的音符
+最后是两个数组batch_genrecomposer[s,:] = genrecomposer，batch_songs[s,:,:] = songmatrix
+前一个是[songNum, [genere_onehot, composer_onehot]]
+后一个是[songNum, eventNum, event]，event四个属性，同一个时间的event放在了一个event中，tones_per_cell限制了最大数量。
+这两个数组在网络中分别为batch_meta和batch_song
+[part][-1][genre, composer, song_data]
+
+GENRE      = 0
+COMPOSER   = 1
+SONG_DATA  = 2
+
+# INDICES IN BATCHES (LENGTH,FREQ,VELOCITY are repeated self.tones_per_cell times):
+TICKS_FROM_PREV_START      = 0
+LENGTH     = 1
+FREQ       = 2
+VELOCITY   = 3
+
+# INDICES IN SONG DATA (NOT YET BATCHED):
+BEGIN_TICK = 0
+
+NUM_FEATURES_PER_TONE = 3
