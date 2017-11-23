@@ -269,8 +269,8 @@ class RNNGAN(object):
     self.songlength = songlength#self.global_step            = tf.Variable(0, trainable=False)
 
     print('songlength: {}'.format(self.songlength))
-    self._input_songdata = tf.placeholder(shape=[batch_size, songlength, num_song_features], dtype=data_type())
-    self._input_metadata = tf.placeholder(shape=[batch_size, num_meta_features], dtype=data_type())
+    self._input_songdata = tf.placeholder(shape=[batch_size, songlength, num_song_features], dtype=data_type(),name="input_data")
+    self._input_metadata = tf.placeholder(shape=[batch_size, num_meta_features], dtype=data_type(),name="input_metadata")
     #_split = tf.split(self._input_songdata,songlength,1)[0]
     print("self._input_songdata",self._input_songdata, 'songlength',songlength)
     #print(tf.squeeze(_split,[1]))
@@ -318,17 +318,21 @@ class RNNGAN(object):
         concat_values = [input_]
         if not FLAGS.disable_feed_previous:
           concat_values.append(generated_point)
-        if FLAGS.generate_meta:
-          concat_values.append(meta_probs)
+        #if FLAGS.generate_meta:
+          # concat_values.append(meta_probs)
+        concat_values.append(self._input_metadata)
         if len(concat_values):
           input_ = tf.concat(axis=1, values=concat_values)
+        print("input:",input_)
+
         input_ = tf.nn.relu(linear(input_, FLAGS.hidden_size_g,
                             scope='input_layer', reuse_scope=(i!=0)))
         output, state = cell(input_, state)
         outputs.append(output)
-        #generated_point = tf.nn.relu(linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0)))
+        # generated_point = tf.nn.relu(linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0)))
         generated_point = linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0))
         self._generated_features.append(generated_point)
+        
       
       
       # PRETRAINING GENERATOR, will feed inputs, not generated outputs:
@@ -342,13 +346,13 @@ class RNNGAN(object):
         if not FLAGS.disable_feed_previous:
           concat_values.append(prev_target)
         #if FLAGS.generate_meta:
-        #  concat_values.append(self._input_metadata)
+        concat_values.append(self._input_metadata)
         if len(concat_values):
           input_ = tf.concat(axis=1, values=concat_values)
         input_ = tf.nn.relu(linear(input_, FLAGS.hidden_size_g, scope='input_layer', reuse_scope=(i!=0)))
         output, state = cell(input_, state)
         outputs.append(output)
-        #generated_point = tf.nn.relu(linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0)))
+        # generated_point = tf.nn.relu(linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0)))
         generated_point = linear(output, num_song_features, scope='output_layer', reuse_scope=(i!=0))
         self._generated_features_pretraining.append(generated_point)
         prev_target = songdata_inputs[i]
@@ -402,8 +406,8 @@ class RNNGAN(object):
       print('self._input_songdata shape {}'.format(self._input_songdata.get_shape()))
       print('generated data shape {}'.format(self._generated_features[0].get_shape()))
       # TODO: (possibly temporarily) disabling meta info
-      if FLAGS.generate_meta:
-        songdata_inputs = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in songdata_inputs]
+      #if FLAGS.generate_meta:
+      songdata_inputs = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in songdata_inputs]
       #print(songdata_inputs[0])
       #print(songdata_inputs[0])
       #print('metadata inputs shape {}'.format(self._input_metadata.get_shape()))
@@ -411,10 +415,11 @@ class RNNGAN(object):
       self.real_d,self.real_d_features = self.discriminator(songdata_inputs, is_training, msg='real')
       scope.reuse_variables()
       # TODO: (possibly temporarily) disabling meta info
-      if FLAGS.generate_meta:
-        generated_data = [tf.concat([meta_probs, songdata_input],1) for songdata_input in self._generated_features]
-      else:
-        generated_data = self._generated_features
+      print("*************************",self._generated_features)
+      #if FLAGS.generate_meta:
+      generated_data = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in self._generated_features]
+      #else:
+      #  generated_data = self._generated_features
       if songdata_inputs[0].get_shape() != generated_data[0].get_shape():
         print('songdata_inputs shape {} != generated data shape {}'.format(songdata_inputs[0].get_shape(), generated_data[0].get_shape()))
       self.generated_d,self.generated_d_features = self.discriminator(generated_data, is_training, msg='generated')
@@ -607,8 +612,10 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
     else:
       fetches = [model.g_loss, model.d_loss, op_g, op_d]
     feed_dict = {}
-    feed_dict[model.input_songdata.name] = batch_song
-    feed_dict[model.input_metadata.name] = batch_meta
+    feed_dict["song_data"] = batch_song#model.input_songdata.name
+    feed_dict["metadata"] = batch_meta#model.input_metadata.name
+
+    print("hello",batch_meta[0])
     #print(batch_song)
     #print(batch_song.shape)
     
@@ -732,7 +739,7 @@ def main(_):
   songlength_ceiling = FLAGS.songlength
 
   if global_step < FLAGS.pretraining_epochs:
-    FLAGS.songlength = int(min(((global_step+10)/10)*10,songlength_ceiling))
+    #FLAGS.songlength = int(min(((global_step+10)/10)*10,songlength_ceiling))
     FLAGS.songlength = int(min((global_step+1)*4,songlength_ceiling))
  
   with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(log_device_placement=FLAGS.log_device_placement)) as session:
