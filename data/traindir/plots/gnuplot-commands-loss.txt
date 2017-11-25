@@ -1,0 +1,4 @@
+set terminal postscript eps color butt "Times" 14
+set yrange [0:400]
+set output "loss.eps"
+plot 'gnuplot-input.txt' using ($1):($3) title 'train G' with linespoints, 'gnuplot-input.txt' using ($1):($4) title 'train D' with linespoints, 'gnuplot-input.txt' using ($1):($5) title 'valid G' with linespoints, 'gnuplot-input.txt' using ($1):($6) title 'valid D' with linespoints, 

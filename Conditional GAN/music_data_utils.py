@@ -51,7 +51,7 @@ sources['classical']['aguado']       = ['http://www.classicalmidi.co.uk/aguadodi
 
 class MusicDataLoader(object):
 
-  def __init__(self, datadir, select_validation_percentage, select_test_percentage, works_per_composer=None, pace_events=False, synthetic=None, tones_per_cell=1, single_composer=None):
+  def __init__(self, datadir, select_validation_percentage, select_test_percentage, genres, works_per_composer=None, pace_events=False, synthetic=None, tones_per_cell=1, single_composer=None):
     self.datadir = datadir
     self.output_ticks_per_quarter_note = 384.0
     self.tones_per_cell = tones_per_cell
@@ -60,6 +60,7 @@ class MusicDataLoader(object):
     self.pointer['validation'] = 0
     self.pointer['test'] = 0
     self.pointer['train'] = 0
+    self.genres = genres
     if synthetic == 'chords':
       self.generate_chords(pace_events=pace_events)
     elif not datadir is None:
@@ -286,8 +287,6 @@ class MusicDataLoader(object):
 
     Time steps will be fractions of beat notes (32th notes).
     """
-
-    self.genres = ['classical', 'jazz', 'hip_hop']
     print('num genres:{}'.format(len(self.genres)))
     
     ohe = LabelBinarizer()
@@ -315,7 +314,6 @@ class MusicDataLoader(object):
                 song_data = self.read_one_file(current_path, f, pace_events)
                 if song_data is None:
                     continue
-
                 song_data_genre.append([genre, song_data])
 
     len_song_data_genre = len(song_data_genre)
@@ -326,7 +324,7 @@ class MusicDataLoader(object):
         self.songs['train']= song_data_genre[test_len:]
     else:
         self.songs['train']= song_data_genre
-
+    #print ("Prahal len_song_data_genre", len_song_data_genre)
     random.shuffle(self.songs['train'])
     
     return self.songs
@@ -596,7 +594,9 @@ class MusicDataLoader(object):
 
     """
     #print (('get_batch(): pointer: {}, len: {}, batchsize: {}'.format(self.pointer[part], len(self.songs[part]), batchsize))
+    #print ('Prahal batch returns ', part, len(self.songs[part]), batchsize ,len(self.songs[part])-batchsize)
     if self.pointer[part] > len(self.songs[part])-batchsize:
+      #print ('Prahal batch returns 2')
       return [None, None]
     if self.songs[part]:
       batch = self.songs[part][self.pointer[part]:self.pointer[part]+batchsize]
@@ -668,13 +668,16 @@ class MusicDataLoader(object):
       #batched_sequence = np.split(batch_songs, indices_or_sections=songlength, axis=1)
       #return [np.squeeze(s, axis=1) for s in batched_sequence]
       #print (('batch returns [0:10]: {}'.format(batch_songs[0,0:10,:]))
-      return [batch_genrecomposer, batch_songs]
+      #print ('Prahal batch returns 3 ', len(batch_genrecomposer), batch_genrecomposer[0])
+
+      return batch_genrecomposer, batch_songs
     else:
       raise 'get_batch() called but self.songs is not initialized.'
   
   def get_num_song_features(self):
     return NUM_FEATURES_PER_TONE*self.tones_per_cell+1
   def get_num_meta_features(self):
+    #print ("Prahal ", len(self.genres))
     return len(self.genres)#+len(self.composers)
 
   def get_midi_pattern(self, song_data):

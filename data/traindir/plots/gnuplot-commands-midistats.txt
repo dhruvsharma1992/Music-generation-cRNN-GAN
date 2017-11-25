@@ -1,0 +1,5 @@
+set terminal postscript eps color butt "Times" 14
+set yrange [0:127]
+set xrange [0:70]
+set output "midistats.eps"
+plot 'midi_stats.gnuplot' using ($1):(100*$3) title 'Scale consistency, %' with linespoints, 'midi_stats.gnuplot' using ($1):($6) title 'Tone span, halftones' with linespoints, 'midi_stats.gnuplot' using ($1):($10) title 'Unique tones' with linespoints, 'midi_stats.gnuplot' using ($1):($23) title 'Intensity span, units' with linespoints, 'midi_stats.gnuplot' using ($1):(100*$24) title 'Polyphony, %' with linespoints, 'midi_stats.gnuplot' using ($1):($12) title '3-tone repetitions' with linespoints

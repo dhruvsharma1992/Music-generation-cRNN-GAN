@@ -44,6 +44,7 @@ from subprocess import call, Popen
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.client import timeline
+from tensorflow.python.ops import array_ops
 
 
 import music_data_utils
@@ -145,6 +146,12 @@ flags.DEFINE_boolean("end_classification", False, "Classify only in ends of D. O
 FLAGS = flags.FLAGS
 
 model_layout_flags = ['num_layers_g', 'num_layers_d', 'meta_layer_size', 'hidden_size_g', 'hidden_size_d', 'biscale_slow_layer_ticks', 'multiscale', 'multiscale', 'disable_feed_previous', 'pace_events', 'minibatch_d', 'unidirectional_d', 'feature_matching', 'composer']
+
+genres = ['classical', 'jazz']
+
+num_of_samples_per_genre = 2
+
+batch_size = 20
 
 def make_rnn_cell(rnn_layer_sizes,
                   dropout_keep_prob=1.0,
@@ -269,10 +276,14 @@ class RNNGAN(object):
     self.songlength = songlength#self.global_step            = tf.Variable(0, trainable=False)
 
     print('songlength: {}'.format(self.songlength))
-    self._input_songdata = tf.placeholder(shape=[batch_size, songlength, num_song_features], dtype=data_type(),name="input_data")
-    self._input_metadata = tf.placeholder(shape=[batch_size, num_meta_features], dtype=data_type(),name="input_metadata")
+    self._input_songdata = tf.placeholder(shape=[None, songlength, num_song_features], dtype=data_type(),name="input_data")
+    self._input_metadata = tf.placeholder(shape=[None, num_meta_features], dtype=data_type(),name="input_metadata")
+    self._input_metadata_wrong = tf.placeholder(shape=[None, num_meta_features], dtype=data_type(),name="input_metadata_wrong")
     #_split = tf.split(self._input_songdata,songlength,1)[0]
-    print("self._input_songdata",self._input_songdata, 'songlength',songlength)
+    self.batch_size = array_ops.shape(self._input_metadata)[0]
+    #print ("Prahal batch size", self.batch_size)
+    batch_size = self.batch_size
+    #print("self._input_songdata",self._input_songdata, 'songlength',songlength)
     #print(tf.squeeze(_split,[1]))
     songdata_inputs = [tf.squeeze(input_, [1])
               for input_ in tf.split(self._input_songdata,songlength,1)]
@@ -323,7 +334,7 @@ class RNNGAN(object):
         concat_values.append(self._input_metadata)
         if len(concat_values):
           input_ = tf.concat(axis=1, values=concat_values)
-        print("input:",input_)
+        #print("input:",input_)
 
         input_ = tf.nn.relu(linear(input_, FLAGS.hidden_size_g,
                             scope='input_layer', reuse_scope=(i!=0)))
@@ -405,29 +416,37 @@ class RNNGAN(object):
       # TODO: (possibly temporarily) disabling meta info
       print('self._input_songdata shape {}'.format(self._input_songdata.get_shape()))
       print('generated data shape {}'.format(self._generated_features[0].get_shape()))
+      
       # TODO: (possibly temporarily) disabling meta info
       #if FLAGS.generate_meta:
-      songdata_inputs = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in songdata_inputs]
+      conditioned_songdata_inputs = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in songdata_inputs]
+
       #print(songdata_inputs[0])
       #print(songdata_inputs[0])
       #print('metadata inputs shape {}'.format(self._input_metadata.get_shape()))
       #print('generated metadata shape {}'.format(meta_probs.get_shape()))
-      self.real_d,self.real_d_features = self.discriminator(songdata_inputs, is_training, msg='real')
+      self.real_d,self.real_d_features = self.discriminator(conditioned_songdata_inputs, is_training, msg='real')
+
       scope.reuse_variables()
+
+      # real data but wrong condition
+      songdata_wrong_condition_inputs = [tf.concat([self._input_metadata_wrong, songdata_input],1) for songdata_input in songdata_inputs]
+      self.wrong_d,self.wrong_d_features = self.discriminator(songdata_wrong_condition_inputs, is_training, msg='wrong')
       # TODO: (possibly temporarily) disabling meta info
-      print("*************************",self._generated_features)
+      #print("*************************",self._generated_features)
       #if FLAGS.generate_meta:
       generated_data = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in self._generated_features]
       #else:
       #  generated_data = self._generated_features
       if songdata_inputs[0].get_shape() != generated_data[0].get_shape():
-        print('songdata_inputs shape {} != generated data shape {}'.format(songdata_inputs[0].get_shape(), generated_data[0].get_shape()))
+        print('songdata_inputs shape {} != generated data shape {}'.format(conditioned_songdata_inputs[0].get_shape(), generated_data[0].get_shape()))
       self.generated_d,self.generated_d_features = self.discriminator(generated_data, is_training, msg='generated')
 
     # Define the loss for discriminator and generator networks (see the original
     # paper for details), and create optimizers for both
     self.d_loss = tf.reduce_mean(-tf.log(tf.clip_by_value(self.real_d, 1e-1000000, 1.0)) \
-                                 -tf.log(1 - tf.clip_by_value(self.generated_d, 0.0, 1.0-1e-1000000)))
+                                 -tf.log(1 - tf.clip_by_value(self.generated_d, 0.0, 1.0-1e-1000000)) \
+                                 -tf.log(1 - tf.clip_by_value(self.wrong_d, 0.0, 1.0-1e-1000000)))
     self.g_loss_feature_matching = tf.reduce_sum(tf.squared_difference(self.real_d_features, self.generated_d_features))
     self.g_loss = tf.reduce_mean(-tf.log(tf.clip_by_value(self.generated_d, 1e-1000000, 1.0)))
 
@@ -458,8 +477,8 @@ class RNNGAN(object):
 
   def discriminator(self, inputs, is_training, msg=''):
     # RNN discriminator:
-    #for i in xrange(len(inputs)):
-    #  print('shape inputs[{}] {}'.format(i, inputs[i].get_shape()))
+    #for i in range(len(inputs)):
+      #print('Prahal shape inputs[{}] {}'.format(i, inputs[i].get_shape()))
     #inputs[0] = tf.Print(inputs[0], [inputs[0]],
     #        '{} inputs[0] = '.format(msg), summarize=20, first_n=20)
     if is_training and FLAGS.keep_prob < 1:
@@ -538,6 +557,10 @@ class RNNGAN(object):
     return self._input_metadata
 
   @property
+  def input_metadata_wrong(self):
+    return self._input_metadata_wrong
+
+  @property
   def targets(self):
     return self._targets
 
@@ -566,6 +589,8 @@ class RNNGAN(object):
 def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretraining=False, verbose=False, run_metadata=None, pretraining_d=False):
   """Runs the model on the given data."""
   #epoch_size = ((len(data) // model.batch_size) - 1) // model.songlength
+
+  #print ("Prahal Inside")
   epoch_start_time = time.time()
   g_loss, d_loss = 10.0, 10.0
   g_losses, d_losses = 0.0, 0.0
@@ -577,11 +602,21 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
   times_in_python = []
   #times_in_batchreading = []
   loader.rewind(part=datasetlabel)
-  [batch_meta, batch_song] = loader.get_batch(model.batch_size, model.songlength, part=datasetlabel)
+  batch_meta, batch_song = loader.get_batch(batch_size, model.songlength, part=datasetlabel)
+
+  # invert the condition to revert the labels
+  if batch_meta is not None:
+    offsets = np.random.choice(len(genres)-1, batch_size) + 1
+    new_labels = (np.argmax(batch_meta, axis=1) + offsets) % len(genres)
+    batch_meta_wrong = np.zeros_like(batch_meta)
+    batch_meta_wrong[np.arange(batch_size), new_labels] = 1
+    #print (batch_meta)
+  #print (batch_meta_wrong)
 
   run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-
+  #print ("Prahal Inside 2", batch_meta)
   while batch_meta is not None and batch_song is not None:
+    #print ("Prahal Inside 3")
     op_g = eval_op_g
     op_d = eval_op_d
     if datasetlabel == 'train' and not pretraining: # and not FLAGS.feature_matching:
@@ -605,6 +640,7 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
         op_d = tf.no_op()
     #fetches = [model.cost, model.final_state, eval_op]
     if pretraining:
+      #print ("Prahal Inside 4")
       if pretraining_d:
         fetches = [model.rnn_pretraining_loss, model.d_loss, op_g, op_d]
       else:
@@ -612,10 +648,11 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
     else:
       fetches = [model.g_loss, model.d_loss, op_g, op_d]
     feed_dict = {}
-    feed_dict["song_data"] = batch_song#model.input_songdata.name
-    feed_dict["metadata"] = batch_meta#model.input_metadata.name
+    feed_dict[model.input_songdata.name] = batch_song
+    feed_dict[model.input_metadata.name] = batch_meta
+    feed_dict[model.input_metadata_wrong.name] = batch_meta_wrong
 
-    print("hello",batch_meta[0])
+    #print("Prahal _ ",batch_meta[0])
     #print(batch_song)
     #print(batch_song.shape)
     
@@ -648,7 +685,7 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
       else:
         print("{}: {} batch loss: G: {:.3f}, D: {:.3f}, avg loss: G: {:.3f}, D: {:.3f} speed: {:.1f} songs/s, avg in graph: {:.1f}, avg in python: {:.1f}.".format(datasetlabel, iters, g_loss, d_loss, float(g_losses)/float(iters), float(d_losses)/float(iters),songs_per_sec, avg_time_in_graph, avg_time_in_python))
     #batchtime = time.time()
-    [batch_meta, batch_song] = loader.get_batch(model.batch_size, model.songlength, part=datasetlabel)
+    batch_meta, batch_song = loader.get_batch(batch_size, model.songlength, part=datasetlabel)
     #times_in_batchreading.append(time.time()-batchtime)
 
   if iters == 0:
@@ -662,14 +699,17 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
   return (g_mean_loss, d_mean_loss)
 
 
-def sample(session, model, batch=False):
+def sample(session, model, one_hot_genre, batch=False):
   """Samples from the generative model."""
   #state = session.run(model.initial_state)
   fetches = [model.generated_features]
+  #feed_dict = { "metadata" : np.array([one_hot_genre])}
   feed_dict = {}
+  feed_dict[model.input_metadata.name] = np.array([one_hot_genre])
+
   generated_features, = session.run(fetches, feed_dict)
   #print( generated_features)
-  print( generated_features[0].shape)
+  #print( generated_features[0].shape)
   # The following worked when batch_size=1.
   # generated_features = [np.squeeze(x, axis=0) for x in generated_features]
   # If batch_size != 1, we just pick the first sample. Wastefull, yes.
@@ -722,7 +762,7 @@ def main(_):
     print('Training on synthetic chords!')
   if FLAGS.composer is not None:
     print('Single composer: {}'.format(FLAGS.composer))
-  loader = music_data_utils.MusicDataLoader(FLAGS.datadir, FLAGS.select_validation_percentage, FLAGS.select_test_percentage, FLAGS.works_per_composer, FLAGS.pace_events, synthetic=synthetic, tones_per_cell=FLAGS.tones_per_cell, single_composer=FLAGS.composer)
+  loader = music_data_utils.MusicDataLoader(FLAGS.datadir, FLAGS.select_validation_percentage, FLAGS.select_test_percentage, genres, FLAGS.works_per_composer, FLAGS.pace_events, synthetic=synthetic, tones_per_cell=FLAGS.tones_per_cell, single_composer=FLAGS.composer)
   if FLAGS.synthetic_chords:
     # This is just a print out, to check the generated data.
     batch = loader.get_batch(batchsize=1, songlength=400)
@@ -813,7 +853,7 @@ def main(_):
               print(train_g_loss)
               print(train_d_loss)
           else:
-            print("Epoch: {} Pretraining loss: G: {:.3f}".format(i, train_g_loss))
+            print("Epoch: {} Pretraining loss: G: {}".format(i, train_g_loss))
         else:
           train_g_loss,train_d_loss = run_epoch(session, m, loader, 'train', m.opt_d, m.opt_g, verbose=True, run_metadata=run_metadata)
           try:
@@ -874,23 +914,27 @@ def main(_):
         except:
           print('failed to run gnuplot. Please do so yourself: gnuplot gnuplot-commands.txt cwd={}'.format(plots_dir))
         
-        song_data = sample(session, m, batch=True)
-        midi_patterns = []
-        print('formatting midi...')
-        midi_time = time.time()
-        for d in song_data:
-          midi_patterns.append(loader.get_midi_pattern(d))
-        print('done. time: {}'.format(time.time()-midi_time))
-        
-        filename = os.path.join(generated_data_dir, 'out-{}-{}-{}.mid'.format(experiment_label, i, datetime.datetime.today().strftime('%Y-%m-%d-%H-%M-%S')))
-        loader.save_midi_pattern(filename, midi_patterns[0])
+        for genre in genres:
+          print('Generating Music for genre = ', genre)
+          one_hot_genre = music_data_utils.onehot(genres.index(genre), len(genres))
+          for x in range(num_of_samples_per_genre):
+            song_data = sample(session, m, one_hot_genre, batch=True)
+            midi_patterns = []
+            #print('formatting midi...')
+            midi_time = time.time()
+            for d in song_data:
+              midi_patterns.append(loader.get_midi_pattern(d))
+            print('done. time: {}'.format(time.time()-midi_time))
+            
+            filename = os.path.join(generated_data_dir, 'out-{}-{}-{}-{}-{}.mid'.format(experiment_label, i, datetime.datetime.today().strftime('%Y-%m-%d-%H-%M-%S'), genre, x))
+            loader.save_midi_pattern(filename, midi_patterns[0])
   
         stats = []
         print('getting stats...')
         stats_time = time.time()
         for p in midi_patterns:
           stats.append(get_all_stats(p))
-        print('done. time: {}'.format(time.time()-stats_time))
+        #print('done. time: {}'.format(time.time()-stats_time))
         #print(stats)
         stats = [stat for stat in stats if stat is not None]
         if len(stats):
@@ -917,10 +961,24 @@ def main(_):
       test_g_loss,test_d_loss = run_epoch(session, m, loader, 'test', tf.no_op(), tf.no_op())
       print("Test loss G: %.3f, D: %.3f" %(test_g_loss, test_d_loss))
 
-    song_data = sample(session, m)
-    filename = os.path.join(generated_data_dir, 'out-{}-{}-{}.mid'.format(experiment_label, i, datetime.datetime.today().strftime('%Y-%m-%d-%H-%M-%S')))
-    loader.save_data(filename, song_data)
-    print('Saved {}.'.format(filename))
+    # song_data = sample(session, m)
+    # filename = os.path.join(generated_data_dir, 'out-{}-{}-{}.mid'.format(experiment_label, i, datetime.datetime.today().strftime('%Y-%m-%d-%H-%M-%S')))
+    # loader.save_data(filename, song_data)
+    # print('Saved {}.'.format(filename))
+
+    for genre in genres:
+      one_hot_genre = music_data_utils.onehot(genres.index(genre), len(genres))
+      for x in range(num_of_samples_per_genre):
+        song_data = sample(session, m, one_hot_genre, batch=True)
+        midi_patterns = []
+        print('formatting midi...')
+        midi_time = time.time()
+        for d in song_data:
+          midi_patterns.append(loader.get_midi_pattern(d))
+        print('done. time: {}'.format(time.time()-midi_time))
+        
+        filename = os.path.join(generated_data_dir, 'out-{}-{}-{}-{}-{}.mid'.format(experiment_label, i, datetime.datetime.today().strftime('%Y-%m-%d-%H-%M-%S'), genre, x))
+        loader.save_midi_pattern(filename, midi_patterns[0])
 
 
 
