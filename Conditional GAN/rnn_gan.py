@@ -55,16 +55,16 @@ logging = tf.logging
 
 flags.DEFINE_string("datadir", None, "Directory to save and load midi music files.")
 flags.DEFINE_string("traindir", None, "Directory to save checkpoints and gnuplot files.")
-flags.DEFINE_integer("epochs_per_checkpoint", 2,
+flags.DEFINE_integer("epochs_per_checkpoint", 5,
                      "How many training epochs to do per checkpoint.")
 flags.DEFINE_boolean("log_device_placement", False,           #
                    "Outputs info on device placement.")
 flags.DEFINE_string("call_after", None, "Call this command after exit.")
 flags.DEFINE_integer("exit_after", 1440,
                      "exit after this many minutes")
-flags.DEFINE_integer("select_validation_percentage", None,
+flags.DEFINE_integer("select_validation_percentage", 15,
                      "Select random percentage of data as validation set.")
-flags.DEFINE_integer("select_test_percentage", None,
+flags.DEFINE_integer("select_test_percentage", 20,
                      "Select random percentage of data as test set.")
 flags.DEFINE_boolean("sample", False,
                      "Sample output from the model. Assume training was already done. Save sample output to file.")
@@ -84,23 +84,23 @@ flags.DEFINE_float("keep_prob", 0.5,                  # 1.0, .35
                    "Keep probability. 1.0 disables dropout.")
 flags.DEFINE_float("lr_decay", 1.0,                   # 1.0
                    "Learning rate decay after each epoch after epochs_before_decay")
-flags.DEFINE_integer("num_layers_g", 2,                 # 2
+flags.DEFINE_integer("num_layers_g", 1,                 # 2
                    "Number of stacked recurrent cells in G.")
-flags.DEFINE_integer("num_layers_d", 2,                 # 2
+flags.DEFINE_integer("num_layers_d", 1,                 # 2
                    "Number of stacked recurrent cells in D.")
-flags.DEFINE_integer("songlength", 100,               # 200, 500
+flags.DEFINE_integer("songlength", 25,               # 200, 500
                    "Limit song inputs to this number of events.")
-flags.DEFINE_integer("meta_layer_size", 200,          # 300, 600
+flags.DEFINE_integer("meta_layer_size", 50,          # 300, 600
                    "Size of hidden layer for meta information module.")
-flags.DEFINE_integer("hidden_size_g", 100,              # 200, 1500
+flags.DEFINE_integer("hidden_size_g", 24,              # 200, 1500
                    "Hidden size for recurrent part of G.")
-flags.DEFINE_integer("hidden_size_d", 100,              # 200, 1500
+flags.DEFINE_integer("hidden_size_d", 24,              # 200, 1500
                    "Hidden size for recurrent part of D. Default: same as for G.")
 flags.DEFINE_integer("epochs_before_decay", 60,       # 40, 140
                    "Number of epochs before starting to decay.")
 flags.DEFINE_integer("max_epoch", 500,                # 500, 500
                    "Number of epochs before stopping training.")
-flags.DEFINE_integer("batch_size", 20,                # 10, 20
+flags.DEFINE_integer("batch_size", 4,                # 10, 20
                    "Batch size.")
 flags.DEFINE_integer("biscale_slow_layer_ticks", 8,   # 8
                    "Biscale slow layer ticks. Not implemented yet.")
@@ -149,9 +149,9 @@ model_layout_flags = ['num_layers_g', 'num_layers_d', 'meta_layer_size', 'hidden
 
 genres = ['classical', 'jazz']
 
-num_of_samples_per_genre = 2
+num_of_samples_per_genre = 1
 
-batch_size = 20
+batch_size = 4
 
 def make_rnn_cell(rnn_layer_sizes,
                   dropout_keep_prob=1.0,
@@ -392,8 +392,8 @@ class RNNGAN(object):
    
     # ---BEGIN, PRETRAINING. ---
     
-    print(tf.transpose(tf.stack(self._generated_features_pretraining), perm=[1, 0, 2]).get_shape())
-    print(self._input_songdata.get_shape())
+    # print(tf.transpose(tf.stack(self._generated_features_pretraining), perm=[1, 0, 2]).get_shape())
+    # print(self._input_songdata.get_shape())
     self.rnn_pretraining_loss = tf.reduce_mean(tf.squared_difference(x=tf.transpose(tf.stack(self._generated_features_pretraining), perm=[1, 0, 2]), y=self._input_songdata))
     if not FLAGS.disable_l2_regularizer:
       self.rnn_pretraining_loss = self.rnn_pretraining_loss+reg_loss
@@ -414,8 +414,8 @@ class RNNGAN(object):
       # Make list of tensors. One per step in recurrence.
       # Each tensor is batchsize*numfeatures.
       # TODO: (possibly temporarily) disabling meta info
-      print('self._input_songdata shape {}'.format(self._input_songdata.get_shape()))
-      print('generated data shape {}'.format(self._generated_features[0].get_shape()))
+      # print('self._input_songdata shape {}'.format(self._input_songdata.get_shape()))
+      # print('generated data shape {}'.format(self._generated_features[0].get_shape()))
       
       # TODO: (possibly temporarily) disabling meta info
       #if FLAGS.generate_meta:
@@ -438,7 +438,7 @@ class RNNGAN(object):
       generated_data = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in self._generated_features]
       #else:
       #  generated_data = self._generated_features
-      if songdata_inputs[0].get_shape() != generated_data[0].get_shape():
+      if conditioned_songdata_inputs[0].get_shape() != generated_data[0].get_shape():
         print('songdata_inputs shape {} != generated data shape {}'.format(conditioned_songdata_inputs[0].get_shape(), generated_data[0].get_shape()))
       self.generated_d,self.generated_d_features = self.discriminator(generated_data, is_training, msg='generated')
 
@@ -504,7 +504,7 @@ class RNNGAN(object):
       #      lstm_cell, output_keep_prob=FLAGS.keep_prob)
       #cell_bw = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range( FLAGS.num_layers_d)], state_is_tuple=True)
       self._initial_state_bw = cell_bw.zero_state(self.batch_size, data_type())
-      print("cell_fw",cell_fw.output_size)
+      # print("cell_fw",cell_fw.output_size)
       #print("cell_bw",cell_bw.output_size)
       #print("inputs",inputs)
       #print("initial_state_fw",self._initial_state_fw)
@@ -533,7 +533,7 @@ class RNNGAN(object):
       decisions = [tf.sigmoid(linear(output, 1, 'decision', reuse_scope=(i!=0))) for i,output in enumerate(outputs)]
       decisions = tf.stack(decisions)
       decisions = tf.transpose(decisions, perm=[1,0,2])
-      print('shape, decisions: {}'.format(decisions.get_shape()))
+      # print('shape, decisions: {}'.format(decisions.get_shape()))
     decision = tf.reduce_mean(decisions, reduction_indices=[1,2])
     decision = tf.Print(decision, [decision],
             '{} decision = '.format(msg), summarize=20, first_n=20)
@@ -687,7 +687,9 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
     #batchtime = time.time()
     batch_meta, batch_song = loader.get_batch(batch_size, model.songlength, part=datasetlabel)
     #times_in_batchreading.append(time.time()-batchtime)
-
+  
+  print("iters***************************")
+  print(iters)
   if iters == 0:
     return (None,None)
 
@@ -841,7 +843,7 @@ def main(_):
         do_exit = False
 
         print("Epoch: {} Learning rate: {:.3f}, pretraining: {}".format(i, session.run(m.lr), (i<FLAGS.pretraining_epochs)))
-        if i<FLAGS.pretraining_epochs:
+        if (i%10)<FLAGS.pretraining_epochs:
           opt_d = tf.no_op()
           if FLAGS.pretraining_d:
             opt_d = m.opt_d
@@ -876,8 +878,9 @@ def main(_):
           print("%s: Has been running for %d seconds. Will exit (exiting after %d minutes)."%(datetime.datetime.today().strftime('%Y-%m-%d %H:%M:%S'), (int)(time.time() - train_start_time), FLAGS.exit_after))
           save = True
           do_exit = True
-
+        save= False
         if save:
+
           saver.save(session, checkpoint_path, global_step=i)
           with open(os.path.join(FLAGS.traindir, 'global_step.pkl'), 'wb') as f:
             pkl.dump(i, f)
@@ -970,6 +973,7 @@ def main(_):
       one_hot_genre = music_data_utils.onehot(genres.index(genre), len(genres))
       for x in range(num_of_samples_per_genre):
         song_data = sample(session, m, one_hot_genre, batch=True)
+        print(song_data)
         midi_patterns = []
         print('formatting midi...')
         midi_time = time.time()

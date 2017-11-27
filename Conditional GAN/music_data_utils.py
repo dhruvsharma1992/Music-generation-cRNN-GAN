@@ -320,13 +320,17 @@ class MusicDataLoader(object):
     #validation_len = int(float(select_validation_percentage/100.0)*len_song_data_genre
     if select_validation_percentage or select_test_percentage:
         test_len = int(float(select_test_percentage/100.0)*len_song_data_genre)
+        validation_len = int(float(select_validation_percentage/100.0)*len_song_data_genre)
         self.songs['test']= song_data_genre[:test_len]
-        self.songs['train']= song_data_genre[test_len:]
+        self.songs['validation']= song_data_genre[test_len:validation_len+test_len]
+        self.songs['train']= song_data_genre[validation_len+test_len:]
     else:
         self.songs['train']= song_data_genre
     #print ("Prahal len_song_data_genre", len_song_data_genre)
-    random.shuffle(self.songs['train'])
-    
+    # random.shuffle(self.songs['train'])
+    print("songs",len(self.songs['train']))
+    print("songs",len(self.songs['validation']))
+    print("songs",len(self.songs['test']))
     return self.songs
 
 
@@ -596,7 +600,8 @@ class MusicDataLoader(object):
     #print (('get_batch(): pointer: {}, len: {}, batchsize: {}'.format(self.pointer[part], len(self.songs[part]), batchsize))
     #print ('Prahal batch returns ', part, len(self.songs[part]), batchsize ,len(self.songs[part])-batchsize)
     if self.pointer[part] > len(self.songs[part])-batchsize:
-      #print ('Prahal batch returns 2')
+      print(self.pointer[part],part,len(self.songs[part]),batchsize)
+      # print ('Prahal batch returns 2')
       return [None, None]
     if self.songs[part]:
       batch = self.songs[part][self.pointer[part]:self.pointer[part]+batchsize]
@@ -627,9 +632,9 @@ class MusicDataLoader(object):
           eventindex = 0
           event = np.zeros(shape=[num_song_features])
           if n < len(batch[s][SONG_DATA]):
-            event[LENGTH]   = batch[s][SONG_DATA][n][LENGTH]
-            event[FREQ]     = batch[s][SONG_DATA][n][FREQ]
-            event[VELOCITY] = batch[s][SONG_DATA][n][VELOCITY]
+            event[LENGTH]   = batch[s][SONG_DATA][n][LENGTH]*1.0/100
+            event[FREQ]     = batch[s][SONG_DATA][n][FREQ]*1.0/1000
+            event[VELOCITY] = batch[s][SONG_DATA][n][VELOCITY]*1.0/100
             ticks_from_start_of_prev_tone = 0.0
             if n>0:
               # beginning of this tone, minus starting of previous
@@ -669,7 +674,7 @@ class MusicDataLoader(object):
       #return [np.squeeze(s, axis=1) for s in batched_sequence]
       #print (('batch returns [0:10]: {}'.format(batch_songs[0,0:10,:]))
       #print ('Prahal batch returns 3 ', len(batch_genrecomposer), batch_genrecomposer[0])
-
+      # print("get_batch",batch_genrecomposer, batch_songs)
       return batch_genrecomposer, batch_songs
     else:
       raise 'get_batch() called but self.songs is not initialized.'
@@ -751,9 +756,9 @@ class MusicDataLoader(object):
       abs_tick_note_beginning += frame[TICKS_FROM_PREV_START]
       for subframe in range(self.tones_per_cell):
         offset = subframe*NUM_FEATURES_PER_TONE
-        tick_len           = int(round(frame[offset+LENGTH]))
-        freq               = frame[offset+FREQ]
-        velocity           = min(int(round(frame[offset+VELOCITY])),127)
+        tick_len           = int(round(frame[offset+LENGTH]*100))
+        freq               = frame[offset+FREQ]*1000
+        velocity           = min(int(round(frame[offset+VELOCITY]*100)),127)
         #print (('tick_len: {}, freq: {}, velocity: {}, ticks_from_prev_start: {}'.format(tick_len, freq, velocity, frame[TICKS_FROM_PREV_START]))
         d = freq_to_tone(freq)
         #print (('d: {}'.format(d))
