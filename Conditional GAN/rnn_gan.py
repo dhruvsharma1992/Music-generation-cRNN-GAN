@@ -38,7 +38,7 @@ from __future__ import division
 from __future__ import print_function
 
 import time, datetime, os, sys
-import _pickle as pkl
+import cPickle as pkl
 from subprocess import call, Popen
 
 import numpy as np
@@ -55,7 +55,7 @@ logging = tf.logging
 
 flags.DEFINE_string("datadir", None, "Directory to save and load midi music files.")
 flags.DEFINE_string("traindir", None, "Directory to save checkpoints and gnuplot files.")
-flags.DEFINE_integer("epochs_per_checkpoint", 5,
+flags.DEFINE_integer("epochs_per_checkpoint", 50,
                      "How many training epochs to do per checkpoint.")
 flags.DEFINE_boolean("log_device_placement", False,           #
                    "Outputs info on device placement.")
@@ -444,9 +444,9 @@ class RNNGAN(object):
 
     # Define the loss for discriminator and generator networks (see the original
     # paper for details), and create optimizers for both
-    self.d_loss = tf.reduce_mean(-tf.log(tf.clip_by_value(self.real_d, 1e-1000000, 1.0)) \
+    self.d_loss = tf.reduce_mean(-2*tf.log(tf.clip_by_value(self.real_d, 1e-1000000, 1.0)) \
                                  -tf.log(1 - tf.clip_by_value(self.generated_d, 0.0, 1.0-1e-1000000)) \
-                                 -tf.log(1 - tf.clip_by_value(self.wrong_d, 0.0, 1.0-1e-1000000)))
+                                 -2*tf.log(1 - tf.clip_by_value(self.wrong_d, 0.0, 1.0-1e-1000000)))
     self.g_loss_feature_matching = tf.reduce_sum(tf.squared_difference(self.real_d_features, self.generated_d_features))
     self.g_loss = tf.reduce_mean(-tf.log(tf.clip_by_value(self.generated_d, 1e-1000000, 1.0)))
 
@@ -676,7 +676,7 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
     iters += 1
 
     if verbose and iters % 10 == 9:
-      songs_per_sec = float(iters * model.batch_size)/float(time.time() - epoch_start_time)
+      songs_per_sec = float(iters * batch_size)/float(time.time() - epoch_start_time)
       avg_time_in_graph = float(sum(times_in_graph))/float(len(times_in_graph))
       avg_time_in_python = float(sum(times_in_python))/float(len(times_in_python))
       #avg_time_batchreading = float(sum(times_in_batchreading))/float(len(times_in_batchreading))
@@ -839,11 +839,11 @@ def main(_):
         if not FLAGS.adam:
           m.assign_lr(session, FLAGS.learning_rate * lr_decay)
 
-        save = False
+#        save = False
         do_exit = False
 
         print("Epoch: {} Learning rate: {:.3f}, pretraining: {}".format(i, session.run(m.lr), (i<FLAGS.pretraining_epochs)))
-        if (i%10)<FLAGS.pretraining_epochs:
+        if i < FLAGS.pretraining_epochs:
           opt_d = tf.no_op()
           if FLAGS.pretraining_d:
             opt_d = m.opt_d

@@ -14,10 +14,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# ==============================================================================
-
-from urllib.parse import urlparse
-from urllib.request import urlopen
+# ========================================================================= 
+import urlparse
+from urllib2 import urlopen
 import os, midi, math, random, re, string, sys
 import numpy as np
 from sklearn.preprocessing import LabelBinarizer
@@ -756,7 +755,7 @@ class MusicDataLoader(object):
       abs_tick_note_beginning += frame[TICKS_FROM_PREV_START]
       for subframe in range(self.tones_per_cell):
         offset = subframe*NUM_FEATURES_PER_TONE
-        tick_len           = int(round(frame[offset+LENGTH]*100))
+        tick_len           = int(round(frame[offset+LENGTH]*100))+1
         freq               = frame[offset+FREQ]*1000
         velocity           = min(int(round(frame[offset+VELOCITY]*100)),127)
         #print (('tick_len: {}, freq: {}, velocity: {}, ticks_from_prev_start: {}'.format(tick_len, freq, velocity, frame[TICKS_FROM_PREV_START]))
