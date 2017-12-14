@@ -334,117 +334,6 @@ class MusicDataLoader(object):
 
 
 
-    """
-    self.genres = sorted(sources.keys())
-    print (('num genres:{}'.format(len(self.genres))))
-    if self.single_composer is not None:
-      self.composers = [self.single_composer]
-    else:
-      self.composers = []
-      for genre in self.genres:
-        self.composers.extend(sources[genre].keys())
-      if debug == 'overfit':
-        self.composers = self.composers[0:1]
-      self.composers = list(set(self.composers))
-      self.composers.sort()
-    print (('num composers: {}'.format(len(self.composers))))
-    print (('limit works per composer: {}'.format(works_per_composer)))
-
-    self.songs = {}
-    self.songs['validation'] = []
-    self.songs['test'] = []
-    self.songs['train'] = []
-
-    #max_composers = 2
-    #composer_id   = 0
-    if select_validation_percentage or select_test_percentage:
-      filelist = []
-      for genre in self.genres:
-        for composer in self.composers:
-          current_path = os.path.join(self.datadir,os.path.join(genre, composer))
-          if not os.path.exists(current_path):
-            print ( 'Path does not exist: {}'.format(current_path))
-            continue
-          files = os.listdir(current_path)
-          works_read = 0
-          for i,f in enumerate(files):
-            if os.path.isfile(os.path.join(current_path,f)):
-              print (('appending {}'.format(os.path.join(os.path.join(genre, composer), f))))
-              filelist.append(os.path.join(os.path.join(genre, composer), f))
-              works_read += 1
-              if works_per_composer is not None and works_read >= works_per_composer:
-                break
-      print (('filelist len: {}'.format(len(filelist))))
-      random.shuffle(filelist)
-      print (('filelist len: {}'.format(len(filelist))))
-      
-      validation_len = 0
-      if select_test_percentage:
-        validation_len = int(float(select_validation_percentage/100.0)*len(filelist))
-        print (('validation len: {}'.format(validation_len)))
-        file_list['validation'] = filelist[0:validation_len]
-        print ( ('Selected validation set (FLAG --select_validation_percentage): {}'.format(file_list['validation'])))
-      if select_test_percentage:
-        test_len = int(float(select_test_percentage/100.0)*len(filelist))
-        print (('test len: {}'.format(test_len)))
-        file_list['test'] = filelist[validation_len:validation_len+test_len]
-        print ( ('Selected test set (FLAG --select_test_percentage): {}'.format(file_list['test'])))
-    
-    # OVERFIT
-    count = 0
-
-    for genre in self.genres:
-      # OVERFIT
-      if debug == 'overfit' and count > 20: break
-      for composer in self.composers:
-        # OVERFIT
-        if debug == 'overfit' and composer not in self.composers: continue
-        if debug == 'overfit' and count > 20: break
-        current_path = os.path.join(self.datadir,os.path.join(genre, composer))
-        if not os.path.exists(current_path):
-          print ( 'Path does not exist: {}'.format(current_path))
-          continue
-        files = os.listdir(current_path)
-        #composer_id += 1
-        #if composer_id > max_composers:
-        #  print (('Only using {} composers.'.format(max_composers))
-        #  break
-        for i,f in enumerate(files):
-          # OVERFIT
-          if debug == 'overfit' and count > 20: break
-          count += 1
-          
-          if works_per_composer is not None and i >= works_per_composer:
-            break
-          
-          if i % 100 == 99 or i+1 == len(files) or i+1 == works_per_composer:
-            print ( 'Reading files {}/{}: {}'.format(genre, composer, (i+1)))
-          if os.path.isfile(os.path.join(current_path,f)):
-            song_data = self.read_one_file(current_path, f, pace_events)
-            if song_data is None:
-              continue
-            if os.path.join(os.path.join(genre, composer), f) in file_list['validation']:
-              self.songs['validation'].append([genre, composer, song_data])
-            elif os.path.join(os.path.join(genre, composer), f) in file_list['test']:
-              self.songs['test'].append([genre, composer, song_data])
-            else:
-              self.songs['train'].append([genre, composer, song_data])
-          #b0reak
-    random.shuffle(self.songs['train'])
-    self.pointer['validation'] = 0
-    self.pointer['test'] = 0
-    self.pointer['train'] = 0
-    # DEBUG: OVERFIT. overfit.
-    if debug == 'overfit':
-      self.songs['train'] = self.songs['train'][0:1]
-      #print (('DEBUG: trying to overfit on the following (repeating for train/validation/test):')
-      for i in range(200):
-        self.songs['train'].append(self.songs['train'][0])
-      self.songs['validation'] = self.songs['train'][0:1]
-      self.songs['test'] = self.songs['train'][0:1]
-    #print (('lens: train: {}, val: {}, test: {}'.format(len(self.songs['train']), len(self.songs['validation']), len(self.songs['test'])))
-    return self.songs
-    """
 
   def read_one_file(self, path, filename, pace_events):
     try:
@@ -642,7 +531,7 @@ class MusicDataLoader(object):
               # and not channel at -1.
             # tones are allowed to overlap. This is indicated with
             # relative time zero in the midi spec.
-            event[TICKS_FROM_PREV_START] = ticks_from_start_of_prev_tone
+            event[TICKS_FROM_PREV_START] = ticks_from_start_of_prev_tone *1.0/100
 
             # event[NUM_FEATURES_PER_TONE-len(self.genres):NUM_FEATURES_PER_TONE] = genreonehot
 
@@ -752,10 +641,10 @@ class MusicDataLoader(object):
     song_events_absolute_ticks = []
     abs_tick_note_beginning = 0.0
     for frame in song_data:
-      abs_tick_note_beginning += frame[TICKS_FROM_PREV_START]
+      abs_tick_note_beginning += int(frame[TICKS_FROM_PREV_START]*100)
       for subframe in range(self.tones_per_cell):
         offset = subframe*NUM_FEATURES_PER_TONE
-        tick_len           = int(round(frame[offset+LENGTH]*100))+1
+        tick_len           = abs(int(round(frame[offset+LENGTH]*100)))
         freq               = frame[offset+FREQ]*1000
         velocity           = min(int(round(frame[offset+VELOCITY]*100)),127)
         #print (('tick_len: {}, freq: {}, velocity: {}, ticks_from_prev_start: {}'.format(tick_len, freq, velocity, frame[TICKS_FROM_PREV_START]))

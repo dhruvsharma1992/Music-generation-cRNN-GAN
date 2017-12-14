@@ -88,17 +88,17 @@ flags.DEFINE_integer("num_layers_g", 1,                 # 2
                    "Number of stacked recurrent cells in G.")
 flags.DEFINE_integer("num_layers_d", 1,                 # 2
                    "Number of stacked recurrent cells in D.")
-flags.DEFINE_integer("songlength", 25,               # 200, 500
+flags.DEFINE_integer("songlength", 50,               # 200, 500
                    "Limit song inputs to this number of events.")
 flags.DEFINE_integer("meta_layer_size", 50,          # 300, 600
                    "Size of hidden layer for meta information module.")
-flags.DEFINE_integer("hidden_size_g", 24,              # 200, 1500
+flags.DEFINE_integer("hidden_size_g", 500,              # 200, 1500
                    "Hidden size for recurrent part of G.")
-flags.DEFINE_integer("hidden_size_d", 24,              # 200, 1500
+flags.DEFINE_integer("hidden_size_d", 50,              # 200, 1500
                    "Hidden size for recurrent part of D. Default: same as for G.")
 flags.DEFINE_integer("epochs_before_decay", 60,       # 40, 140
                    "Number of epochs before starting to decay.")
-flags.DEFINE_integer("max_epoch", 500,                # 500, 500
+flags.DEFINE_integer("max_epoch", 1000,                # 500, 500
                    "Number of epochs before stopping training.")
 flags.DEFINE_integer("batch_size", 4,                # 10, 20
                    "Batch size.")
@@ -139,7 +139,7 @@ flags.DEFINE_integer("tones_per_cell", 1,             # 2,3
                    "Maximum number of tones to output per RNN cell.")
 flags.DEFINE_string("composer", None, "Specify exactly one composer, and train model only on this.")
 flags.DEFINE_boolean("generate_meta", False, "Generate the composer and genre as part of output.")
-flags.DEFINE_float("random_input_scale", 1.0,       #
+flags.DEFINE_float("random_input_scale", 2.0,       #
                    "Scale of random inputs (1.0=same size as generated features).")
 flags.DEFINE_boolean("end_classification", False, "Classify only in ends of D. Otherwise, does classification at every timestep and mean reduce.")
 
@@ -279,42 +279,21 @@ class RNNGAN(object):
     self._input_songdata = tf.placeholder(shape=[None, songlength, num_song_features], dtype=data_type(),name="input_data")
     self._input_metadata = tf.placeholder(shape=[None, num_meta_features], dtype=data_type(),name="input_metadata")
     self._input_metadata_wrong = tf.placeholder(shape=[None, num_meta_features], dtype=data_type(),name="input_metadata_wrong")
-    #_split = tf.split(self._input_songdata,songlength,1)[0]
     self.batch_size = array_ops.shape(self._input_metadata)[0]
-    #print ("Prahal batch size", self.batch_size)
     batch_size = self.batch_size
-    #print("self._input_songdata",self._input_songdata, 'songlength',songlength)
-    #print(tf.squeeze(_split,[1]))
     songdata_inputs = [tf.squeeze(input_, [1])
               for input_ in tf.split(self._input_songdata,songlength,1)]
   
     
     with tf.variable_scope('G') as scope:
       scope.set_regularizer(tf.contrib.layers.l2_regularizer(scale=FLAGS.reg_scale))
-      #lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.hidden_size_g, forget_bias=1.0, state_is_tuple=True)
       if is_training and FLAGS.keep_prob < 1:
-        #lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
-        #    lstm_cell, output_keep_prob=FLAGS.keep_prob)
         cell = make_rnn_cell([FLAGS.hidden_size_g]*FLAGS.num_layers_g,dropout_keep_prob=FLAGS.keep_prob)
       else:
          cell = make_rnn_cell([FLAGS.hidden_size_g]*FLAGS.num_layers_g)	  
-
-      #cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range( FLAGS.num_layers_g)], state_is_tuple=True)
       self._initial_state = cell.zero_state(batch_size, data_type())
 
-      # TODO: (possibly temporarily) disabling meta info
-      if FLAGS.generate_meta:
-        metainputs = tf.random_uniform(shape=[batch_size, int(FLAGS.random_input_scale*num_meta_features)], minval=0.0, maxval=1.0)
-        meta_g = tf.nn.relu(linear(metainputs, FLAGS.meta_layer_size, scope='meta_layer', reuse_scope=False))
-        meta_softmax_w = tf.get_variable("meta_softmax_w", [FLAGS.meta_layer_size, num_meta_features])
-        meta_softmax_b = tf.get_variable("meta_softmax_b", [num_meta_features])
-        meta_logits = tf.nn.xw_plus_b(meta_g, meta_softmax_w, meta_softmax_b)
-        meta_probs = tf.nn.softmax(meta_logits)
-
       random_rnninputs = tf.random_uniform(shape=[batch_size, songlength, int(FLAGS.random_input_scale*num_song_features)], minval=0.0, maxval=1.0, dtype=data_type())
-
-      # Make list of tensors. One per step in recurrence.
-      # Each tensor is batchsize*numfeatures.
       
       random_rnninputs = [tf.squeeze(input_, [1]) for input_ in tf.split( random_rnninputs,songlength,1)]
       
@@ -420,11 +399,6 @@ class RNNGAN(object):
       # TODO: (possibly temporarily) disabling meta info
       #if FLAGS.generate_meta:
       conditioned_songdata_inputs = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in songdata_inputs]
-
-      #print(songdata_inputs[0])
-      #print(songdata_inputs[0])
-      #print('metadata inputs shape {}'.format(self._input_metadata.get_shape()))
-      #print('generated metadata shape {}'.format(meta_probs.get_shape()))
       self.real_d,self.real_d_features = self.discriminator(conditioned_songdata_inputs, is_training, msg='real')
 
       scope.reuse_variables()
@@ -432,8 +406,7 @@ class RNNGAN(object):
       # real data but wrong condition
       songdata_wrong_condition_inputs = [tf.concat([self._input_metadata_wrong, songdata_input],1) for songdata_input in songdata_inputs]
       self.wrong_d,self.wrong_d_features = self.discriminator(songdata_wrong_condition_inputs, is_training, msg='wrong')
-      # TODO: (possibly temporarily) disabling meta info
-      #print("*************************",self._generated_features)
+      #if FLAGS.generate_meta:
       #if FLAGS.generate_meta:
       generated_data = [tf.concat([self._input_metadata, songdata_input],1) for songdata_input in self._generated_features]
       #else:
@@ -477,17 +450,11 @@ class RNNGAN(object):
 
   def discriminator(self, inputs, is_training, msg=''):
     # RNN discriminator:
-    #for i in range(len(inputs)):
-      #print('Prahal shape inputs[{}] {}'.format(i, inputs[i].get_shape()))
-    #inputs[0] = tf.Print(inputs[0], [inputs[0]],
-    #        '{} inputs[0] = '.format(msg), summarize=20, first_n=20)
     if is_training and FLAGS.keep_prob < 1:
       inputs = [tf.nn.dropout(input_, FLAGS.keep_prob) for input_ in inputs]
     
     #lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.hidden_size_d, forget_bias=1.0, state_is_tuple=True)
     if is_training and FLAGS.keep_prob < 1:
-      #lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
-      #lstm_cell, output_keep_prob=FLAGS.keep_prob)
       cell_fw = make_rnn_cell([FLAGS.hidden_size_d]* FLAGS.num_layers_d,dropout_keep_prob=FLAGS.keep_prob)
       
       cell_bw = make_rnn_cell([FLAGS.hidden_size_d]* FLAGS.num_layers_d,dropout_keep_prob=FLAGS.keep_prob)
@@ -498,28 +465,11 @@ class RNNGAN(object):
     #cell_fw = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range( FLAGS.num_layers_d)], state_is_tuple=True)
     self._initial_state_fw = cell_fw.zero_state(self.batch_size, data_type())
     if not FLAGS.unidirectional_d:
-      #lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(FLAGS.hidden_size_g, forget_bias=1.0, state_is_tuple=True)
-      #if is_training and FLAGS.keep_prob < 1:
-      #  lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
-      #      lstm_cell, output_keep_prob=FLAGS.keep_prob)
-      #cell_bw = tf.nn.rnn_cell.MultiRNNCell([lstm_cell for _ in range( FLAGS.num_layers_d)], state_is_tuple=True)
       self._initial_state_bw = cell_bw.zero_state(self.batch_size, data_type())
-      # print("cell_fw",cell_fw.output_size)
-      #print("cell_bw",cell_bw.output_size)
-      #print("inputs",inputs)
-      #print("initial_state_fw",self._initial_state_fw)
-      #print("initial_state_bw",self._initial_state_bw)
       outputs, state_fw, state_bw = tf.contrib.rnn.static_bidirectional_rnn(cell_fw, cell_bw, inputs, initial_state_fw=self._initial_state_fw, initial_state_bw=self._initial_state_bw)
-      #outputs[0] = tf.Print(outputs[0], [outputs[0]],
-      #        '{} outputs[0] = '.format(msg), summarize=20, first_n=20)
-      #state = tf.concat(state_fw, state_bw)
-      #endoutput = tf.concat(concat_dim=1, values=[outputs[0],outputs[-1]])
+      
     else:
       outputs, state = tf.nn.rnn(cell_fw, inputs, initial_state=self._initial_state_fw)
-      #state = self._initial_state
-	  
-      #outputs, state = cell_fw(tf.convert_to_tensor (inputs),state)
-      #endoutput = outputs[-1]
 
     if FLAGS.minibatch_d:
       outputs = [minibatch(tf.reshape(outp, shape=[FLAGS.batch_size, -1]), msg=msg, reuse_scope=(i!=0)) for i,outp in enumerate(outputs)]
@@ -614,17 +564,13 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
   #print (batch_meta_wrong)
 
   run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-  #print ("Prahal Inside 2", batch_meta)
   while batch_meta is not None and batch_song is not None:
-    #print ("Prahal Inside 3")
     op_g = eval_op_g
     op_d = eval_op_d
     if datasetlabel == 'train' and not pretraining: # and not FLAGS.feature_matching:
       if d_loss == 0.0 and g_loss == 0.0:
         print('Both G and D train loss are zero. Exiting.')
         break
-        #saver.save(session, checkpoint_path, global_step=m.global_step)
-        #break
       elif d_loss == 0.0:
         #print('D train loss is zero. Freezing optimization. G loss: {:.3f}'.format(g_loss))
         op_g = tf.no_op()
@@ -640,7 +586,6 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
         op_d = tf.no_op()
     #fetches = [model.cost, model.final_state, eval_op]
     if pretraining:
-      #print ("Prahal Inside 4")
       if pretraining_d:
         fetches = [model.rnn_pretraining_loss, model.d_loss, op_g, op_d]
       else:
@@ -652,14 +597,7 @@ def run_epoch(session, model, loader, datasetlabel, eval_op_g, eval_op_d, pretra
     feed_dict[model.input_metadata.name] = batch_meta
     feed_dict[model.input_metadata_wrong.name] = batch_meta_wrong
 
-    #print("Prahal _ ",batch_meta[0])
-    #print(batch_song)
-    #print(batch_song.shape)
     
-    #for i, (c, h) in enumerate(model.initial_state):
-    #  feed_dict[c] = state[i].c
-    #  feed_dict[h] = state[i].h
-    #cost, state, _ = session.run(fetches, feed_dict)
     time_before_graph = time.time()
     if iters > 0:
       times_in_python.append(time_before_graph-time_after_graph)
@@ -710,11 +648,6 @@ def sample(session, model, one_hot_genre, batch=False):
   feed_dict[model.input_metadata.name] = np.array([one_hot_genre])
 
   generated_features, = session.run(fetches, feed_dict)
-  #print( generated_features)
-  #print( generated_features[0].shape)
-  # The following worked when batch_size=1.
-  # generated_features = [np.squeeze(x, axis=0) for x in generated_features]
-  # If batch_size != 1, we just pick the first sample. Wastefull, yes.
   returnable = []
   if batch:
     for batchno in range(generated_features[0].shape[0]):
